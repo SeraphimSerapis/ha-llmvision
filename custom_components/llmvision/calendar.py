@@ -8,6 +8,7 @@ import asyncio
 from .const import DOMAIN, CONF_RETENTION_TIME
 from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.components.calendar import (
     CalendarEntity,
     CalendarEvent,
@@ -47,13 +48,33 @@ class Timeline(CalendarEntity):
         # Path to the JSON file where events are stored
         self._db_path = os.path.join(self.hass.config.path(DOMAIN), "events.db")
         self._file_path = f"/media/{DOMAIN}/snapshots"
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
-        os.makedirs(self._file_path, exist_ok=True)
 
-        self.hass.loop.create_task(self.async_update()) # Init db, load events and check events for retention
-        self.hass.loop.create_task(self._cleanup()) # Cleanup unlinked images
-        self.hass.async_create_task(self._migrate())  # Run migration if needed
+        # Schedule async initialization tasks
+        self.hass.async_create_task(self._async_init())
+
+    async def _async_init(self):
+        """Perform async initialization tasks."""
+        # Ensure directories exist (run in executor to avoid blocking)
+        await self.hass.async_add_executor_job(
+            os.makedirs, os.path.dirname(self._db_path), True
+        )
+        await self.hass.async_add_executor_job(
+            os.makedirs, self._file_path, True
+        )
+
+        # Init db, load events and check events for retention
+        await self.async_update()
+        # Run migration if needed
+        await self._migrate()
+
+        # Defer cleanup until Home Assistant has fully started to reduce startup load
+        if self.hass.is_running:
+            await self._cleanup()
+        else:
+            self.hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_STARTED,
+                lambda _: self.hass.async_create_task(self._cleanup())
+            )
 
     @property
     def icon(self) -> str:
