@@ -56,10 +56,10 @@ class Timeline(CalendarEntity):
         """Perform async initialization tasks."""
         # Ensure directories exist (run in executor to avoid blocking)
         await self.hass.async_add_executor_job(
-            os.makedirs, os.path.dirname(self._db_path), True
+            partial(os.makedirs, os.path.dirname(self._db_path), exist_ok=True)
         )
         await self.hass.async_add_executor_job(
-            os.makedirs, self._file_path, True
+            partial(os.makedirs, self._file_path, exist_ok=True)
         )
 
         # Init db, load events and check events for retention
