@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from aiohttp import ClientTimeout
-import boto3
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from functools import partial
@@ -1083,6 +1082,10 @@ class AWSBedrock(Provider):
 
     async def invoke_bedrock(self, model: str, data: dict) -> dict:
         """Post data to url and return response data"""
+        # Lazy import boto3 to avoid loading the heavy AWS SDK at startup
+        # for users who don't use AWS Bedrock
+        import boto3
+
         _LOGGER.debug(f"AWS Bedrock request data: {Request.sanitize_data(data)}")
 
         try:
