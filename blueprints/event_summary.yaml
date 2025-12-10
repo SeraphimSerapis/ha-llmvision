@@ -470,17 +470,20 @@ variables:
   camera_message: >
     {{ camera_entity.replace("camera.", "").replace("_", " ")|capitalize }}
   camera: >
-    {{ camera_entities_list[0].replace("camera.", "").replace("_", " ") | title }}
+    {{ (camera_entities_list[0] | default('camera.unknown')).replace("camera.", "").replace("_", " ") | title }}
   importance_prompt: >
     Classify the security event based on this image. Choose from the following options: "passive" for unimportant events, "time-sensitive" for notable but non-critical events such as a person at the front door, and "critical" only for potential burglaries or highly suspicious activity. Respond with one of these options exactly, without additional explanation.
   camera_entity_snapshot: >
-    {{ camera_entities_list[0] }}
+    {{ camera_entities_list[0] | default('') }}
   camera_file_path: >
-    {{ camera_entity_snapshot.replace("camera.", "")}}
+    {{ camera_entity_snapshot.replace("camera.", "") }}
   file_path: !input file_path
   snapshot_access_file_path: '{{ file_path | replace(''/config/www'',
     ''/local'') | replace(''/media'', ''/media/local'') }}'
   notification_time: !input notification_time
+  # Pre-computed notification eligibility to avoid redundant checks
+  should_notify: >
+    {{ notify and (not this.attributes.last_triggered or (now() - this.attributes.last_triggered).seconds > delay_notification) }}
 
 max_exceeded: silent
 mode: single
@@ -507,6 +510,7 @@ action:
             value_template: "{{ important }}"
         sequence:
           - action: llmvision.image_analyzer
+            continue_on_error: true
             data:
               image_entity: "{{[camera_entity]}}"
               provider: !input provider
@@ -525,20 +529,15 @@ action:
         sequence:
           - stop: "Event is not important"
 
-  # Only send notification if enabled, and if condtions and cooldown are met
+  # Only send notification if enabled, and if conditions and cooldown are met
   - if:
     - condition: template
-      value_template: !input notify
+      value_template: "{{ notify and should_notify }}"
     then:
     - if:
       - condition: !input condition_notify
       then:
-      - if:
-        - condition: template
-          value_template: '{{ not this.attributes.last_triggered or (now() - this.attributes.last_triggered).seconds
-            > delay_notification }}'
-        then:
-        - choose:
+      - choose:
             - conditions:
                 - condition: template
                   value_template: "{{ notification_delivery == 'Dynamic' }}"
@@ -560,6 +559,7 @@ action:
                           for_each: "{{device_name_map}}"
                           sequence:
                             - action: "notify.{{ repeat.item }}"
+                              continue_on_error: true
                               data:
                                 title: "{{ label }} {{ notification_time }}"
                                 message: "{{camera_message}} has detected activity."
@@ -599,6 +599,7 @@ action:
                           for_each: "{{device_name_map}}"
                           sequence:
                             - action: "notify.{{ repeat.item }}"
+                              continue_on_error: true
                               data:
                                 title: "{{ label }} {{ notification_time }}"
                                 message: "{{camera_message}} has detected activity."
@@ -620,6 +621,7 @@ action:
 
   - alias: "Analyze event"
     action: llmvision.stream_analyzer
+    continue_on_error: true
     data:
       image_entity: "{{[camera_entity]}}"
       duration: !input duration
@@ -640,20 +642,15 @@ action:
     variables:
       label: "{{response.title}}"
 
-  # Only send notification if enabled, and if condtions and cooldown are met
+  # Only send notification if enabled, and if conditions and cooldown are met
   - if:
     - condition: template
-      value_template: !input notify
+      value_template: "{{ notify and should_notify and response is defined }}"
     then:
     - if:
       - condition: !input condition_notify
       then:
-      - if:
-        - condition: template
-          value_template: '{{ not this.attributes.last_triggered or (now() - this.attributes.last_triggered).seconds
-            > delay_notification }}'
-        then:
-        - choose:
+      - choose:
             - conditions:
                 - condition: template
                   value_template: "{{ analysis_mode=='Snapshot' }}"
@@ -663,6 +660,7 @@ action:
                   for_each: "{{device_name_map}}"
                   sequence:
                     - action: "notify.{{ repeat.item }}"
+                      continue_on_error: true
                       data:
                         title: "{{ label }} {{ notification_time }}"
                         message: "{{response.response_text}}"
@@ -703,6 +701,7 @@ action:
                     for_each: "{{device_name_map}}"
                     sequence:
                       - action: "notify.{{ repeat.item }}"
+                        continue_on_error: true
                         data:
                           title: "{{ label }} {{ notification_time }}"
                           message: "{{ response.response_text }}"
@@ -738,6 +737,7 @@ action:
               for_each: "{{device_name_map}}"
               sequence:
                 - action: "notify.{{ repeat.item }}"
+                  continue_on_error: true
                   data:
                     message: TTS
                     data:
