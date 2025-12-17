@@ -8,7 +8,7 @@ import asyncio
 from .const import DOMAIN, CONF_RETENTION_TIME
 from homeassistant.util import dt as dt_util
 from homeassistant.core import HomeAssistant
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.helpers.start import async_at_started
 from homeassistant.components.calendar import (
     CalendarEntity,
     CalendarEvent,
@@ -68,13 +68,10 @@ class Timeline(CalendarEntity):
         await self._migrate()
 
         # Defer cleanup until Home Assistant has fully started to reduce startup load
-        if self.hass.is_running:
+        async def _deferred_cleanup(hass: HomeAssistant) -> None:
             await self._cleanup()
-        else:
-            self.hass.bus.async_listen_once(
-                EVENT_HOMEASSISTANT_STARTED,
-                lambda _: self.hass.async_create_task(self._cleanup())
-            )
+
+        async_at_started(self.hass, _deferred_cleanup)
 
     @property
     def icon(self) -> str:
